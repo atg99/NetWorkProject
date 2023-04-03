@@ -43,6 +43,9 @@ class ANetworkPlayer : public ACharacter
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 		class UInputAction* fireAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+		class UInputAction* releaseAction;
 public:
 	ANetworkPlayer();
 
@@ -91,10 +94,12 @@ public:
 	void ClientFire();
 
 	UFUNCTION(NetMulticast, Unreliable)
-	void MultiFire();
+	void MultiFire(bool bhasAmmo);
 
 	void Fire();
 
+	UFUNCTION()
+	void ReleaseWeapon();
 
 	UPROPERTY(EditDefaultsOnly, Category = MySet)
 		TSubclassOf<class ABulletActor> bulletFactory;
@@ -105,6 +110,9 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = Anim)
 		class UAnimMontage* hitMontage;
+
+	UPROPERTY(EditAnywhere, Category = Anim)
+	class UAnimMontage* NoAmmo;
 
 	UPROPERTY(EditAnywhere, Replicated)
 	int32 curHP;
@@ -127,6 +135,9 @@ public:
 	UFUNCTION(NetMulticast, Unreliable)
 	void MultiPlayHitreact();
 
+	UFUNCTION(Server, Unreliable)
+	void SetName(const FString& name);
+
 	FORCEINLINE int32 GetHealth(){ return curHP;}
 	FORCEINLINE int32 GetAmmo(){ return ammo;}
 
@@ -138,4 +149,18 @@ public:
 
 	UPROPERTY()
 	bool bIsDead = false;
+
+	UPROPERTY(Replicated)
+	bool bFireDelay;
+
+	UPROPERTY()
+	class AWeaponActor* OwningWeapon;
+
+	UPROPERTY()
+	class UServerGameInstance* gameInstance;
+
+	UPROPERTY(Replicated)
+	FString myName;
 };
+
+

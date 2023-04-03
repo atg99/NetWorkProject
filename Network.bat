@@ -1,0 +1,1 @@
+"C:\Program Files\Epic Games\UE_5.1\Engine\Binaries\Win64\UnrealEditor.exe" "C:\Git\NetWorkProject\NetworkProject.uproject" -game -log -ResX=680 -ResY=480 -Windowed

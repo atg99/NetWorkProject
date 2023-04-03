@@ -45,46 +45,27 @@ void ABulletActor::Tick(float DeltaTime)
 void ABulletActor::OnOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
 	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
-	APawn* owningPawn = Cast<APawn>(GetOwner());
-	//컨트롤러가 0번일 때 로컬일 때 서버에 알린다
-	if(owningPawn != nullptr && owningPawn->GetController() != nullptr && owningPawn->GetController()->IsLocalController())
+	if(GetOwner() == nullptr)
 	{
-		ServerSpawnEffect();
-		ANetworkPlayer* player = Cast<ANetworkPlayer>(OtherActor);
-		if(player)
-		{
-			hitPlayer = player;
-			player->playerWidget->SetPlayer(player);
-			player->playerWidget->ServerSetHeathBar(10);
-		}
-		
+		return;
 	}
 	//서버 총알인 경우에만
 	if (HasAuthority())
 	{
 		ANetworkPlayer* player = Cast<ANetworkPlayer>(OtherActor);
-		if (player)
+		// 오너가 설정되기 전에는 데미지를 실행하지 않음
+		if (player && player != GetOwner())
 		{
-			//ServerHitplayer(player);
-			//hitPlayer = player;
-			//player->playerWidget->SetPlayer(player);
-			//player->playerWidget->ServerSetHeathBar(10);
-			player->ServerOnDamage(-10);
+			player->ServerOnDamage(-attackPower);
 			player->MultiPlayHitreact();
+			Destroy();
 		}
 	}
 }
 
-void ABulletActor::ServerSpawnEffect_Implementation()
+void ABulletActor::Destroyed()
 {
-	//이펙트 출력
-	MultiSpawnParticle();
-}
+	Super::Destroyed();
 
-void ABulletActor::MultiSpawnParticle_Implementation()
-{
-	//이펙트 출력
 	UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), particle, GetActorLocation());
-	//서버에서 distory하면 이팩트 생성전에 없어져서 안된다
-	//Destroy();
 }

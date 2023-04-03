@@ -38,13 +38,12 @@ public:
 	UPROPERTY(EditAnywhere)
 	class UParticleSystem* particle;
 
-	UFUNCTION(NetMulticast, Unreliable)
-	void MultiSpawnParticle();
-
-	UFUNCTION(Server, Unreliable)
-	void ServerSpawnEffect();
-
 	UPROPERTY()
 	class ANetworkPlayer* hitPlayer;
+
+	UPROPERTY(EditAnywhere)
+	int32 attackPower;
+
+	virtual void Destroyed() override;
 };
 

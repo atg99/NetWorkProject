@@ -14,7 +14,10 @@
 #include "DrawDebugHelpers.h"
 #include "MyUserWidget.h"
 #include "PlayerAnimInstance.h"
+#include "ServerGameInstance.h"
+#include "WeaponActor.h"
 #include "Components/ProgressBar.h"
+#include "Components/TextBlock.h"
 #include "Components/WidgetComponent.h"
 #include "Net/UnrealNetwork.h"
 
@@ -76,16 +79,31 @@ void ANetworkPlayer::BeginPlay()
 		}
 	}
 
-	SetHealth(100);
+	if(HasAuthority())
+	{
+		SetHealth(100);
+	}
 
 	playerWidget = Cast<UMyUserWidget>(playerInfoUI->GetWidget());
 	AnimInstance = Cast<UPlayerAnimInstance>(GetMesh()->GetAnimInstance());
+	gameInstance = Cast<UServerGameInstance>(GetGameInstance());
+
+	if(GetController() != nullptr && GetController()->IsLocalController())
+	{
+		SetName(gameInstance->sessionID.ToString());
+	}
+
+	/*FTimerHandle NameTimer;
+	GetWorldTimerManager().SetTimer(NameTimer, FTimerDelegate::CreateLambda([&](){playerWidget->text_name->SetText(FText::FromString(myName)); }), 1, false);*/
+	
 }
 
 // Called every frame
 void ANetworkPlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	playerWidget->text_name->SetText(FText::FromString(myName));
 
 	if(bIsDead)
 	{
@@ -103,13 +121,18 @@ void ANetworkPlayer::Tick(float DeltaTime)
 
 	if(curHP <= 0)
 	{
-		AnimInstance->isDead = true;
 		bIsDead = true;
-		GetCharacterMovement()->DisableMovement();
-		GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		bUseControllerRotationYaw = false;
-		FollowCamera->PostProcessSettings.ColorSaturation = FVector4(0,0,0,1);
+		//조작을 하는 클라이언트 에서만 실행한다.
+		if(GetController()&&GetController()->IsLocalController())
+		{
+			AnimInstance->isDead = true;
+			
+			GetCharacterMovement()->DisableMovement();
+			GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			bUseControllerRotationYaw = false;
+			FollowCamera->PostProcessSettings.ColorSaturation = FVector4(0, 0, 0, 1);
+		}
 	}
 }
 
@@ -150,6 +173,8 @@ void ANetworkPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 		//Looking
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ANetworkPlayer::Look);
 		EnhancedInputComponent->BindAction(fireAction, ETriggerEvent::Started, this, &ANetworkPlayer::Fire);
+
+		EnhancedInputComponent->BindAction(releaseAction, ETriggerEvent::Started, this, &ANetworkPlayer::ReleaseWeapon);
 
 	}
 
@@ -199,6 +224,8 @@ void ANetworkPlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	//서버에서만 변경해야한다
 	DOREPLIFETIME(ANetworkPlayer, curHP);
 	DOREPLIFETIME(ANetworkPlayer, ammo);
+	DOREPLIFETIME(ANetworkPlayer, bFireDelay);
+	DOREPLIFETIME(ANetworkPlayer, myName);
 
 	//조건
 	DOREPLIFETIME_CONDITION(ANetworkPlayer, repNumber, COND_OwnerOnly);
@@ -210,14 +237,30 @@ void ANetworkPlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 //서버에 요청하는 함수
 void ANetworkPlayer::ServerFire_Implementation()
 {
-	UE_LOG(LogTemp, Warning, TEXT("Server Fire"));
-	GEngine->AddOnScreenDebugMessage(-1, 3, FColor::Magenta, FString("Server Fire"), true, FVector2D(1.253f));
+	//총알이 있으면 총알을 생성한다
+	if(ammo > 0)
+	{
+		if(!bFireDelay){
+			UE_LOG(LogTemp, Warning, TEXT("Server Fire"));
+			GEngine->AddOnScreenDebugMessage(-1, 3, FColor::Magenta, FString("Server Fire"), true, FVector2D(1.253f));
 
-	ABulletActor* bullet =  GetWorld()->SpawnActor<ABulletActor>(bulletFactory, GetActorLocation() + GetActorForwardVector() * 100, GetActorRotation());
+			ABulletActor* bullet = GetWorld()->SpawnActor<ABulletActor>(bulletFactory, OwningWeapon->meshComp->GetSocketLocation(TEXT("Muzzle")), GetActorRotation());
 
-	bullet->SetOwner(this);
+			bullet->SetOwner(this);
+			bullet->attackPower = OwningWeapon->power;
 
-	MultiFire();
+			MultiFire(true);
+			ammo--;
+			OwningWeapon->ammo--;
+			bFireDelay = true;
+			FTimerHandle TimerHandle_FireDelay;
+			GetWorldTimerManager().SetTimer(TimerHandle_FireDelay, FTimerDelegate::CreateLambda([&](){bFireDelay = false;}), OwningWeapon->reloadTime, false);
+		}
+	}
+	else
+	{
+		MultiFire(false);
+	}
 }
 
 //유효한 요청인지 확인한다
@@ -228,17 +271,25 @@ bool ANetworkPlayer::ServerFire_Validate()
 }
 
 //서버로부터 전달되는 함수
-void ANetworkPlayer::MultiFire_Implementation()
+void ANetworkPlayer::MultiFire_Implementation(bool bHasAmmo)
 {
 	//요청을 받고 모든 클라 및 서버에서 fire를 실행한다
 	UE_LOG(LogTemp, Warning, TEXT("Multi Fire"));
 	GEngine->AddOnScreenDebugMessage(-1, 3, FColor::Magenta, FString("Multi Fire"), true, FVector2D(1.253f));
 	//GetWorld()->SpawnActor<ABulletActor>(bulletFactory, GetActorLocation()+GetActorForwardVector()*100, GetActorRotation());
 
-	if(fireMontage)
+	if(bHasAmmo)
 	{
-		PlayAnimMontage(fireMontage);
+		if (fireMontage)
+		{
+			PlayAnimMontage(fireMontage);
+		}
 	}
+	else
+	{
+		PlayAnimMontage(NoAmmo);
+	}
+	
 }
 
 void ANetworkPlayer::ClientFire_Implementation()
@@ -249,6 +300,7 @@ void ANetworkPlayer::ClientFire_Implementation()
 
 void ANetworkPlayer::Fire()
 {
+	if(!OwningWeapon){ return; }
 	UE_LOG(LogTemp, Warning, TEXT("Query Fire"));
 	GEngine->AddOnScreenDebugMessage(-1, 3, FColor::Magenta, FString("Query Fire"), true, FVector2D(1.253f));
 
@@ -257,6 +309,15 @@ void ANetworkPlayer::Fire()
 	//ClientFire();
 
 	//TestFunc();
+}
+
+//총 내리기
+void ANetworkPlayer::ReleaseWeapon()
+{
+	if(GetController() != nullptr &&GetController()->IsLocalController() == true &&OwningWeapon != nullptr)
+	{
+		OwningWeapon->ServerReleaseWeapon(this);
+	}
 }
 
 void ANetworkPlayer::SetHealth(int32 value)
@@ -290,4 +351,11 @@ void ANetworkPlayer::MultiPlayHitreact_Implementation()
 void ANetworkPlayer::ServerOnDamage_Implementation(int32 value)
 {
 	AddHealth(value);
+}
+
+void ANetworkPlayer::SetName_Implementation(const FString& name)
+{
+	//서버에서 이름을 가져오면 안됨
+	//myName = Cast<UServerGameInstance>(GetGameInstance())->sessionID.ToString();
+	myName = name;
 }
