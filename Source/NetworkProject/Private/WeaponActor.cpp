@@ -88,6 +88,10 @@ void AWeaponActor::ServerReleaseWeapon_Implementation(ANetworkPlayer* player)
 
 void AWeaponActor::MulticastGrapWeapon_Implementation(class ANetworkPlayer* player)
 {
+	if(!player)
+	{
+		return;
+	}
 	player->OwningWeapon = this;
 	//피직스를 끄고 붙힌다 //모든 클라이언트에 적용되는 부분은 RPC를 사용한다
 	boxComp->SetSimulatePhysics(false);

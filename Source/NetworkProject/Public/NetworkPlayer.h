@@ -161,6 +161,14 @@ public:
 
 	UPROPERTY(Replicated)
 	FString myName;
+
+	UFUNCTION()
+	void DieProcess();
+
+	void ChangeSpectatorMode();
+
+	UPROPERTY()
+	class ABattleSpectatorPawn* battleSpectator;
 };
 
 

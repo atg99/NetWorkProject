@@ -2,6 +2,10 @@
 
 #include "NetworkPlayer.h"
 
+#include "BattleGameMode.h"
+#include "BattlePlayerController.h"
+#include "BattlePlayerState.h"
+#include "BattleSpectatorPawn.h"
 #include "BulletActor.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -19,6 +23,8 @@
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Components/WidgetComponent.h"
+#include "GameFramework/GameStateBase.h"
+#include "GameFramework/HUD.h"
 #include "Net/UnrealNetwork.h"
 
 // Sets default values
@@ -81,7 +87,7 @@ void ANetworkPlayer::BeginPlay()
 
 	if(HasAuthority())
 	{
-		SetHealth(100);
+		SetHealth(maxHP);
 	}
 
 	playerWidget = Cast<UMyUserWidget>(playerInfoUI->GetWidget());
@@ -117,22 +123,11 @@ void ANetworkPlayer::Tick(float DeltaTime)
 		repNumber++;
 	}
 
-	playerWidget->pb_HP->SetPercent((float)curHP/(float)maxHP);
+	playerWidget->pb_HP->SetPercent((float)curHP / (float)maxHP);
 
 	if(curHP <= 0)
 	{
-		bIsDead = true;
-		//조작을 하는 클라이언트 에서만 실행한다.
-		if(GetController()&&GetController()->IsLocalController())
-		{
-			AnimInstance->isDead = true;
-			
-			GetCharacterMovement()->DisableMovement();
-			GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			bUseControllerRotationYaw = false;
-			FollowCamera->PostProcessSettings.ColorSaturation = FVector4(0, 0, 0, 1);
-		}
+		//DieProcess();
 	}
 }
 
@@ -145,13 +140,47 @@ FString ANetworkPlayer::PrintInfo()
 	//플레이어 컨트롤러
 	FString myOwner = GetOwner() != nullptr ? GetOwner()->GetName() : TEXT("No Owner");
 	FString name = GetName();
-	FString infoText = FString::Printf(TEXT("Local Role: %s\nRemote Role %s\nNet Connection: %s\nOwer: %s\n Name : %s"), *myLocalRole, *myRemoteRole, *myConnetion, *myOwner, *GetName());
+	
 #pragma endregion
 
 #pragma region RepOrNot
 	//FString infoText = FString::Printf(("Number : %d, RepNum : %d"), number, repNumber);
 
 #pragma endregion
+
+	ABattlePlayerController* pc = Cast<ABattlePlayerController>(GetController());
+
+	FString pcString = pc != nullptr ? FString(GetController()->GetName()) : FString("No Controller");
+	FString gmString = GetWorld()->GetAuthGameMode() != nullptr ? FString("Has GameMode") : FString("No game mode");
+	FString gsString = GetWorld()->GetGameState() != nullptr ? FString("Has GameState") : FString("No Game State");
+	FString psString = GetPlayerState() != nullptr ? FString("Has PlayerState") : FString("No PlayerState");
+	FString hudStrnig;
+	if(pc)
+	{
+		hudStrnig = pc->GetHUD() != nullptr ? pc->GetHUD()->GetName() : FString("No HUD");
+	}
+
+	FString psName;
+	if(GetPlayerState())
+	{
+		psName = GetPlayerState()->GetPlayerName();
+	}
+	else
+	{
+		psName = FString("No PlayerState");
+	}
+
+	FString gsNames;
+	if(GetWorld()->GetGameState())
+	{
+		for(TObjectPtr<APlayerState> ps : GetWorld()->GetGameState()->PlayerArray)
+		{
+			gsNames.Append(FString::Printf(TEXT("%s\n"), *ps->GetPlayerName()));
+		}
+	}
+
+	FString infoText = FString::Printf(TEXT("Local Role: %s\nRemote Role %s\nNet Connection: %s\nOwer: %s\n Name : %s\n%s\n%s\n%s\n%s\n%s\nplayerStateName : %s\n%s"), *myLocalRole, *myRemoteRole, *myConnetion, *myOwner, *GetName(), *pcString, *gmString, *gsString, *psString, *hudStrnig, *psName, *gsNames);
+
 	return infoText;
 }
 
@@ -332,12 +361,64 @@ void ANetworkPlayer::AddHealth(int32 value)
 	curHP += value;
 }
 
+void ANetworkPlayer::DieProcess()
+{
+	bIsDead = true;
+	//조작을 하는 클라이언트 에서만 실행한다.
+	if (GetController())
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Yellow, TEXT("Local DieProcess"));
+		playerWidget->pb_HP->SetPercent((float)curHP / (float)maxHP);
+		GetCharacterMovement()->DisableMovement();
+		GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		bUseControllerRotationYaw = false;
+		FollowCamera->PostProcessSettings.ColorSaturation = FVector4(0, 0, 0, 1);
+		ReleaseWeapon();
+	}
+
+	//게임모드는 서버에만 있으므로 
+	if(HasAuthority())
+	{
+		//네트워크에서는 지연 이슈로 0.2초 후에 타이머 실행을 권장
+		
+		ChangeSpectatorMode();
+
+		FTimerHandle respawnHandle;
+		GetWorldTimerManager().SetTimer(respawnHandle, FTimerDelegate::CreateLambda([&]()
+		{
+			battleSpectator->GetController()->Possess(this);
+			battleSpectator->Destroy();
+			Cast<ABattlePlayerController>(GetController())->Respawn(this);
+		}), 4.0f, false);
+	}
+}
+
+void ANetworkPlayer::ChangeSpectatorMode()
+{
+	ABattleGameMode* gm = Cast<ABattleGameMode>(GetWorld()->GetAuthGameMode());
+
+	if(gm != nullptr)
+	{
+		//게임모드에 설정한 관전자 폰 클래스를 불러온다
+		TSubclassOf<ASpectatorPawn> spectatorPawn = gm->SpectatorClass;
+
+		FActorSpawnParameters param;
+		param.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		battleSpectator = GetWorld()->SpawnActor<ABattleSpectatorPawn>(spectatorPawn, GetActorLocation(), GetActorRotation(), param);
+		if(battleSpectator != nullptr)
+		{
+			GetController()->Possess(battleSpectator);
+		}
+	}
+}
+
 void ANetworkPlayer::MultiPlayHitreact_Implementation()
 {
 	if (curHP <= 0)
 	{
 		AnimInstance->isDead = true;
-		bIsDead = true;
+		DieProcess();
 	}
 	else
 	{
@@ -358,4 +439,15 @@ void ANetworkPlayer::SetName_Implementation(const FString& name)
 	//서버에서 이름을 가져오면 안됨
 	//myName = Cast<UServerGameInstance>(GetGameInstance())->sessionID.ToString();
 	myName = name;
+
+	//서버에서 플레이어 스테이트를 변경한다
+	ABattlePlayerState* ps = Cast<ABattlePlayerState>(GetPlayerState());
+
+	if (ps)
+	{
+		//플레이어이름을 알아서 변경해준다
+		ps->SetPlayerName(name);
+	}
+
+
 }

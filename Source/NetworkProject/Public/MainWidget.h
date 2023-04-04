@@ -17,9 +17,12 @@ class NETWORKPROJECT_API UMainWidget : public UUserWidget
 public:
 	UPROPERTY(VisibleAnywhere, meta=(BindWidget))
 	class UTextBlock* text_health;
+
 	UPROPERTY(VisibleAnywhere, meta=(BindWidget))
 	class UTextBlock* text_Ammo;
 
+	UPROPERTY(VisibleAnywhere, meta = (BindWidget))
+	class UTextBlock* text_PlayerList;
 
 
 protected:

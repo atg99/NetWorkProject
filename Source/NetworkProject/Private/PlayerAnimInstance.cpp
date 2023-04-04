@@ -54,7 +54,7 @@ void UPlayerAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	playerRoll = deltaRot.GetNormalized().Roll;
 
 	//죽었는지 확인
-	isDead = player->bIsDead;
+	//isDead = player->bIsDead;
 }
 
 //서버에서 복제 등록하기 위한 함수

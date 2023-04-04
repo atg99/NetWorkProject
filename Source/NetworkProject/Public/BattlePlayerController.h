@@ -18,5 +18,11 @@ protected:
 
 	UPROPERTY(EditAnywhere)
 	TSubclassOf<class UMainWidget> mainWidget;
+
+public:
+
+	//posess된 플레이어를 받는다
+	UFUNCTION()
+	void Respawn(class ANetworkPlayer* player);
 	
 };
