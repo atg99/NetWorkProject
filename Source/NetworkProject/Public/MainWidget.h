@@ -24,7 +24,11 @@ public:
 	UPROPERTY(VisibleAnywhere, meta = (BindWidget))
 	class UTextBlock* text_PlayerList;
 
+	UPROPERTY(VisibleAnywhere, meta = (BindWidget))
+	class UButton* btn_exit;
 
+	UFUNCTION()
+	void ExitSession();
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;

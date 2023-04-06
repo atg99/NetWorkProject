@@ -18,6 +18,7 @@ AActor* ABattleGameMode::ChoosePlayerStart_Implementation(AController* Player)
 			return ps;
 		}
 	}
+
 	//플레이어수가 플레이어스타트 엑터보다 많으면 null이 반환된다 (위험)
 	return nullptr;
 }

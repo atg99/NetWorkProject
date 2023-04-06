@@ -46,10 +46,17 @@ class ANetworkPlayer : public ACharacter
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 		class UInputAction* releaseAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* AutoMovingAction;
 public:
 	ANetworkPlayer();
 
+	UFUNCTION()
+	void AutoMove();
 
+	UPROPERTY()
+	bool bAutoMove;
 protected:
 
 	/** Called for movement input */
@@ -169,6 +176,18 @@ public:
 
 	UPROPERTY()
 	class ABattleSpectatorPawn* battleSpectator;
+
+	UFUNCTION()
+	void EndSession();
+
+	UFUNCTION(Server, Unreliable)
+	void ServerDestoryAllSession();
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void MultiDestoryAllSession();
+
+	UFUNCTION()
+	void DestroyMySession();
 };
 
 

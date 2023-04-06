@@ -7,6 +7,7 @@
 #include "NetworkPlayer.h"
 #include "Components/SphereComponent.h"
 #include "Engine/StaticMeshSocket.h"
+#include "GameFramework/PlayerState.h"
 #include "Kismet/GameplayStatics.h"
 
 // Sets default values
@@ -56,6 +57,12 @@ void ABulletActor::OnOverlap(UPrimitiveComponent* OverlappedComponent, AActor* O
 		// 오너가 설정되기 전에는 데미지를 실행하지 않음
 		if (player && player != GetOwner())
 		{
+			if(player->GetHealth() <= attackPower)
+			{
+				ANetworkPlayer* myOwner = Cast<ANetworkPlayer>(GetOwner());
+				myOwner->GetPlayerState()->SetScore(myOwner->GetPlayerState()->GetScore()+10);
+			}
+
 			player->ServerOnDamage(-attackPower);
 			player->MultiPlayHitreact();
 			Destroy();

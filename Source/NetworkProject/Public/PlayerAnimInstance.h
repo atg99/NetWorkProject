@@ -42,6 +42,18 @@ public:
 
 	FORCEINLINE bool GetDead(){ return isDead; };
 
+	UFUNCTION()
+	void AnimNotify_Footstep();
+
+	UFUNCTION()
+	void AnimNotify_Footstep2(class USoundBase* WalkSound, class USoundAttenuation* Attenuation);
+
+	UPROPERTY(EditAnywhere)
+	class USoundBase* footstep;
+
+	UPROPERTY(EditAnywhere)
+	class USoundAttenuation* atten;
+
 private:
 	UPROPERTY()
 	class ANetworkPlayer* player;

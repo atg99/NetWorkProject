@@ -5,6 +5,7 @@
 #include "NetworkPlayer.h"
 #include "KismetAnimationLibrary.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 void UPlayerAnimInstance::NativeBeginPlay()
 {
@@ -57,6 +58,15 @@ void UPlayerAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	//isDead = player->bIsDead;
 }
 
+void UPlayerAnimInstance::AnimNotify_Footstep()
+{
+	UGameplayStatics::PlaySoundAtLocation(GetWorld(),footstep,player->GetActorLocation(), player->GetActorRotation(), 1, 1, 0, atten);
+}
+
+void UPlayerAnimInstance::AnimNotify_Footstep2(USoundBase* WalkSound, USoundAttenuation* Attenuation)
+{
+}
+
 //서버에서 복제 등록하기 위한 함수
 void UPlayerAnimInstance::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
@@ -64,6 +74,7 @@ void UPlayerAnimInstance::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	//리플리케이트 변수 등록
 	//서버에서만 변경해야한다
 	//DOREPLIFETIME(ANetworkPlayer, curHP);
+
 	DOREPLIFETIME(UPlayerAnimInstance, isDead);
 
 	//조건

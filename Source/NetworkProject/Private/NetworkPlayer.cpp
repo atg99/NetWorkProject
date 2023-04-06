@@ -16,6 +16,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "DrawDebugHelpers.h"
+#include "EngineUtils.h"
 #include "MyUserWidget.h"
 #include "PlayerAnimInstance.h"
 #include "ServerGameInstance.h"
@@ -71,6 +72,18 @@ ANetworkPlayer::ANetworkPlayer()
 	playerInfoUI->SetupAttachment(GetMesh());
 }
 
+void ANetworkPlayer::AutoMove()
+{
+	if(!bAutoMove)
+	{
+		bAutoMove = true;
+	}
+	else
+	{
+		bAutoMove = false;
+	}
+}
+
 // Called when the game starts or when spawned
 void ANetworkPlayer::BeginPlay()
 {
@@ -110,7 +123,7 @@ void ANetworkPlayer::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 	playerWidget->text_name->SetText(FText::FromString(myName));
-
+	playerWidget->pb_HP->SetPercent((float)curHP / (float)maxHP);
 	if(bIsDead)
 	{
 		return;
@@ -123,11 +136,14 @@ void ANetworkPlayer::Tick(float DeltaTime)
 		repNumber++;
 	}
 
-	playerWidget->pb_HP->SetPercent((float)curHP / (float)maxHP);
-
 	if(curHP <= 0)
 	{
-		//DieProcess();
+		DieProcess();
+	}
+
+	if(HasAuthority() && bAutoMove)
+	{
+		AddMovementInput(GetActorForwardVector());
 	}
 }
 
@@ -205,6 +221,7 @@ void ANetworkPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 
 		EnhancedInputComponent->BindAction(releaseAction, ETriggerEvent::Started, this, &ANetworkPlayer::ReleaseWeapon);
 
+		EnhancedInputComponent->BindAction(AutoMovingAction, ETriggerEvent::Started, this, &ANetworkPlayer::AutoMove);
 	}
 
 }
@@ -343,7 +360,7 @@ void ANetworkPlayer::Fire()
 //총 내리기
 void ANetworkPlayer::ReleaseWeapon()
 {
-	if(GetController() != nullptr &&GetController()->IsLocalController() == true &&OwningWeapon != nullptr)
+	if(GetController() != nullptr &&GetController()->IsLocalController() == true && OwningWeapon != nullptr)
 	{
 		OwningWeapon->ServerReleaseWeapon(this);
 	}
@@ -375,23 +392,26 @@ void ANetworkPlayer::DieProcess()
 		bUseControllerRotationYaw = false;
 		FollowCamera->PostProcessSettings.ColorSaturation = FVector4(0, 0, 0, 1);
 		ReleaseWeapon();
-	}
 
+		GetWorld()->GetFirstPlayerController()->SetShowMouseCursor(true);
+	}
+	GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Yellow, TEXT("DieProcess"));
 	//게임모드는 서버에만 있으므로 
-	if(HasAuthority())
-	{
-		//네트워크에서는 지연 이슈로 0.2초 후에 타이머 실행을 권장
-		
-		ChangeSpectatorMode();
+	//if(HasAuthority())
+	//{
+	//	//네트워크에서는 지연 이슈로 0.2초 후에 타이머 실행을 권장
+	//	
+		//ChangeSpectatorMode();
 
-		FTimerHandle respawnHandle;
-		GetWorldTimerManager().SetTimer(respawnHandle, FTimerDelegate::CreateLambda([&]()
-		{
-			battleSpectator->GetController()->Possess(this);
-			battleSpectator->Destroy();
-			Cast<ABattlePlayerController>(GetController())->Respawn(this);
-		}), 4.0f, false);
-	}
+
+	//	FTimerHandle respawnHandle;
+	//	GetWorldTimerManager().SetTimer(respawnHandle, FTimerDelegate::CreateLambda([&]()
+	//	{
+	//		battleSpectator->GetController()->Possess(this);
+	//		battleSpectator->Destroy();
+	//		Cast<ABattlePlayerController>(GetController())->Respawn(this);
+	//	}), 4.0f, false);
+	//}
 }
 
 void ANetworkPlayer::ChangeSpectatorMode()
@@ -418,7 +438,6 @@ void ANetworkPlayer::MultiPlayHitreact_Implementation()
 	if (curHP <= 0)
 	{
 		AnimInstance->isDead = true;
-		DieProcess();
 	}
 	else
 	{
@@ -448,6 +467,51 @@ void ANetworkPlayer::SetName_Implementation(const FString& name)
 		//플레이어이름을 알아서 변경해준다
 		ps->SetPlayerName(name);
 	}
+}
 
+void ANetworkPlayer::EndSession()
+{
+	if(HasAuthority())
+	{
+		for(TActorIterator<ANetworkPlayer> pl(GetWorld()); pl; ++pl)
+		{
+			ANetworkPlayer* p = *pl;
+			if(p != this)
+			{
+				p->MultiDestoryAllSession();
+			}
+		}
+		FTimerHandle TimerHandle_SessionDestroy;
+		GetWorldTimerManager().SetTimer(TimerHandle_SessionDestroy, this, &ANetworkPlayer::DestroyMySession, 1, false, 0);
+	}
+	else
+	{
+		DestroyMySession();
+	}
+}
 
+void ANetworkPlayer::DestroyMySession()
+{
+	//레벨을 처음 위치로 이동시킨다
+	gameInstance->sessionInterface->DestroySession(gameInstance->sessionID);
+
+	//세션 ID로 세션을 종료한다
+	Cast<ABattlePlayerController>(GetController())->ClientTravel(FString("/Game/Maps/LoginLevel"), ETravelType::TRAVEL_Absolute);
+}
+
+void ANetworkPlayer::MultiDestoryAllSession_Implementation()
+{
+	if(GetController()&&GetController()->IsLocalController())
+	{
+		//레벨을 처음 위치로 이동시킨다
+		gameInstance->sessionInterface->DestroySession(gameInstance->sessionID);
+
+		//세션 ID로 세션을 종료한다
+		Cast<ABattlePlayerController>(GetController())->ClientTravel(FString("/Game/Maps/LoginLevel"), ETravelType::TRAVEL_Absolute);
+	}
+}
+
+void ANetworkPlayer::ServerDestoryAllSession_Implementation()
+{
+	MultiDestoryAllSession();
 }
